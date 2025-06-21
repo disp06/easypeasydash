@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="text-white"><i class="fas fa-tachometer-alt"></i> Панель мониторинга</h2>
+    <button class="btn btn-primary" onclick="testSpeed()"><i class="fas fa-wifi"></i> Тест скорости</button>
+</div>
+<p class="text-white">Последнее обновление: <span id="last-update">-</span></p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card p-3 text-center">
+            <h5 class="text-white">CPU</h5>
+            <h2 id="cpu-usage" class="status-good">-</h2>
+            <div class="progress" style="height: 20px;">
+                <div id="cpu-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 text-center">
+            <h5 class="text-white">RAM</h5>
+            <h2 id="ram-usage" class="status-good">-</h2>
+            <small id="ram-details" class="text-white">-</small>
+            <div class="progress mt-2" style="height: 20px;">
+                <div id="ram-progress" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 text-center">
+            <h5 class="text-white">Время сервера (NTP)</h5>
+            <h2 id="server-time" class="text-white">-</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 text-center">
+            <h5 id="uptime-label" class="text-white">Uptime</h5>
+            <h2 id="uptime" class="text-success">-</h2>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header text-white">
+        <h5><i class="fas fa-wifi"></i> Скорость интернета</h5>
+    </div>
+    <div class="card-body text-center text-white">
+        <div id="speed-test-initial" class="text-white">Нажмите кнопку "Тест скорости" для измерения</div>
+        <div id="speed-test-loading" class="d-none"><i class="fas fa-spinner fa-spin"></i> Тестирование скорости...</div>
+        <div id="speed-test-result" class="d-none row text-center">
+            <div class="col-md-4">
+                <h6>Загрузка</h6>
+                <h4 id="download-speed" class="text-primary">-</h4>
+            </div>
+            <div class="col-md-4">
+                <h6>Выгрузка</h6>
+                <h4 id="upload-speed" class="text-success">-</h4>
+            </div>
+            <div class="col-md-4">
+                <h6>Пинг</h6>
+                <h4 id="ping" class="text-info">-</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center text-white">
+        <h5><i class="fas fa-list"></i> Логи системы</h5>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadLogs()"><i class="fas fa-sync"></i> Обновить</button>
+    </div>
+    <div class="card-body log-container" id="system-logs">Загрузка логов...</div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const updateIntervalMs = 5000;
+
+function updateSystemStats() {
+    fetch('/api/system_stats').then(r => r.json()).then(data => {
+        if (data.error) {
+            console.error(data.error);
+            return;
+        }
+        document.getElementById('cpu-usage').textContent = data.cpu_usage + '%';
+        document.getElementById('cpu-progress').style.width = data.cpu_usage + '%';
+        updateStatusClass('cpu-usage', data.cpu_usage, 50, 90);
+        updateProgressClass('cpu-progress', data.cpu_usage, 50, 90);
+
+        document.getElementById('ram-usage').textContent = data.memory.percent + '%';
+        document.getElementById('ram-details').textContent = `${data.memory.used_mb} / ${data.memory.total_mb} MB`;
+        document.getElementById('ram-progress').style.width = data.memory.percent + '%';
+        updateStatusClass('ram-usage', data.memory.percent, 50, 90);
+        updateProgressClass('ram-progress', data.memory.percent, 50, 90);
+
+        if (data.server_time) {
+            document.getElementById('server-time').textContent = data.server_time;
+        } else {
+            document.getElementById('server-time').textContent = 'Недоступно';
+        }
+
+        document.getElementById('uptime').textContent = data.uptime;
+        document.getElementById('last-update').textContent = new Date(data.timestamp).toLocaleString('ru-RU');
+    }).catch(console.error);
+}
+
+function updateStatusClass(id, value, warn, danger) {
+    const el = document.getElementById(id);
+    el.classList.remove('status-good', 'status-warning', 'status-danger');
+    if (value >= danger) el.classList.add('status-danger');
+    else if (value >= warn) el.classList.add('status-warning');
+    else el.classList.add('status-good');
+}
+
+function updateProgressClass(id, value, warn, danger) {
+    const el = document.getElementById(id);
+    el.className = 'progress-bar';
+    if (value >= danger) el.classList.add('bg-danger');
+    else if (value >= warn) el.classList.add('bg-warning');
+    else el.classList.add('bg-success');
+}
+
+function testSpeed() {
+    document.getElementById('speed-test-initial').classList.add('d-none');
+    document.getElementById('speed-test-result').classList.add('d-none');
+    document.getElementById('speed-test-loading').classList.remove('d-none');
+
+    fetch('/api/speed_test').then(r => r.json()).then(data => {
+        document.getElementById('speed-test-loading').classList.add('d-none');
+        if (data.error) {
+            alert('Ошибка теста скорости: ' + data.error);
+            document.getElementById('speed-test-initial').classList.remove('d-none');
+            return;
+        }
+        document.getElementById('download-speed').textContent = data.download + ' Мбит/с';
+        document.getElementById('upload-speed').textContent = data.upload + ' Мбит/с';
+        document.getElementById('ping').textContent = data.ping + ' мс';
+        document.getElementById('speed-test-result').classList.remove('d-none');
+    }).catch(() => {
+        alert('Ошибка теста скорости');
+        document.getElementById('speed-test-loading').classList.add('d-none');
+        document.getElementById('speed-test-initial').classList.remove('d-none');
+    });
+}
+
+function loadLogs() {
+    fetch('/api/system_logs').then(r => r.json()).then(data => {
+        const container = document.getElementById('system-logs');
+        if (!data.length) {
+            container.innerHTML = '<p class="text-muted">Логи пусты</p>';
+            return;
+        }
+        container.innerHTML = data.reverse().map(log => {
+            const date = new Date(log.timestamp).toLocaleString('ru-RU');
+            return `<div><strong>${date}</strong> | CPU: ${log.cpu_usage}% | RAM: ${log.memory.percent}% (${log.memory.used_mb}MB)</div>`;
+        }).join('');
+    }).catch(console.error);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateSystemStats();
+    loadLogs();
+    setInterval(updateSystemStats, updateIntervalMs);
+});
+</script>
+{% endblock %}
